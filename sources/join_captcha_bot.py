@@ -908,6 +908,21 @@ def chat_member_status_change(update: Update, context: CallbackContext):
                 reply_markup=reply_markup, timeout=40)
         if sent_result["msg"] is None:
             send_problem = True
+    if captcha_mode == "multibutton":
+        buttons = ["ПОВТ", "КТ", "СБР", "АР2", "СУ", "РУС", "ЛАТ"]
+        button_press = choice(buttons)
+        # Send a multibutton challenge
+        challenge_text = TEXT[lang]["NEW_USER_MULTIBUTTON_MODE"].format(join_user_name,
+                chat_title, timeout_str, button_press)
+        # Prepare inline keyboard buttons to let user pass
+        keyboard = [[InlineKeyboardButton(button, callback_data="multibutton_captcha {}{}"
+            .format(join_user_id, " +" if button == button_press else "")) for button in buttons]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        printts("[{}] Sending captcha message to {}: [multibutton]".format(chat_id, join_user_name))
+        sent_result = tlg_send_msg(bot, chat_id, challenge_text,
+                reply_markup=reply_markup, timeout=40)
+        if sent_result["msg"] is None:
+            send_problem = True
     elif captcha_mode == "poll":
         poll_question = get_chat_config(chat_id, "Poll_Q")
         poll_options = get_chat_config(chat_id, "Poll_A")
@@ -1021,7 +1036,7 @@ def chat_member_status_change(update: Update, context: CallbackContext):
             new_users[chat_id][join_user_id]["msg_to_rm"].append(solve_poll_request_msg_id)
         # Restrict user to deny send any kind of message until captcha is solve
         # Allow send text messages for image based captchas that requires it
-        if (captcha_mode == "poll") or (captcha_mode == "button"):
+        if (captcha_mode in ("poll", "button", "multibutton")):
             tlg_restrict_user(bot, chat_id, join_user_id, send_msg=False,
                 send_media=False, send_stickers_gifs=False, insert_links=False,
                 send_polls=False, invite_members=False, pin_messages=False,
@@ -1443,9 +1458,10 @@ def key_inline_keyboard(update: Update, context: CallbackContext):
     # Check and handle "request new img captcha" or "button captcha challenge" buttons
     if "image_captcha" in key_pressed:
         button_request_captcha(bot, query)
+    elif "multibutton_captcha" in key_pressed:
+        multibutton_request(bot, query, len(button_data) > 2)
     elif "button_captcha" in key_pressed:
         button_request_pass(bot, query)
-
 
 def button_request_captcha(bot, query):
     '''Button "Another captcha" pressed handler'''
@@ -1581,6 +1597,88 @@ def button_request_pass(bot, query):
             send_stickers_gifs=False, insert_links=False, send_polls=False,
             invite_members=False, pin_messages=False, change_group_info=False)
     printts("[{}] Button-only challenge pass request process completed.".format(chat_id))
+    printts(" ")
+
+def multibutton_request(bot, query, passed):
+    '''Multibutton captcha button pressed handler'''
+    global new_users
+    # Get query data
+    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    user_name = query.from_user.full_name
+    # If has an alias, just use the alias
+    if query.from_user.username is not None:
+        user_name = "@{}".format(query.from_user.username)
+    chat_title = query.message.chat.title
+    # Add an unicode Left to Right Mark (LRM) to chat title (fix for arabic, hebrew, etc.)
+    chat_title = add_lrm(chat_title)
+    # Ignore if request doesn't come from a new user in captcha process
+    if chat_id not in new_users:
+        return
+    if user_id not in new_users[chat_id]:
+        return
+    # Get chat settings
+    lang = get_chat_config(chat_id, "Language")
+    rm_result_msg = get_chat_config(chat_id, "Rm_Result_Msg")
+    # Remove previous join messages
+    for msg in new_users[chat_id][user_id]["msg_to_rm"]:
+        tlg_delete_msg(bot, chat_id, msg)
+    if passed:
+        # Remove user from captcha process
+        del new_users[chat_id][user_id]
+        # Send message solve message
+        printts("[{}] User {} solved a multibutton challenge.".format(chat_id, user_name))
+        # Remove all restrictions on the user
+        tlg_unrestrict_user(bot, chat_id, user_id)
+        # Send captcha solved message
+        bot_msg = TEXT[lang]["CAPTCHA_SOLVED"].format(user_name)
+        if rm_result_msg:
+            tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+        else:
+            tlg_send_msg(bot, chat_id, bot_msg)
+        # Check for custom welcome message and send it
+        welcome_msg = get_chat_config(chat_id, "Welcome_Msg").format(escape_markdown(user_name, 2))
+        if welcome_msg != "-":
+            # Send the message as Markdown
+            rm_welcome_msg = get_chat_config(chat_id, "Rm_Welcome_Msg")
+            if rm_welcome_msg:
+                welcome_msg_time = get_chat_config(chat_id, "Welcome_Time")
+                sent_result = tlg_send_selfdestruct_msg_in(bot, chat_id, welcome_msg,
+                        welcome_msg_time, parse_mode="MARKDOWN")
+            else:
+                sent_result = tlg_send_msg(bot, chat_id, welcome_msg, "MARKDOWN")
+            if sent_result is None:
+                printts("[{}] Error: Can't send the welcome message.".format(chat_id))
+        # Check for send just text message option and apply user restrictions
+        restrict_non_text_msgs = get_chat_config(chat_id, "Restrict_Non_Text")
+        # Restrict for 1 day
+        if restrict_non_text_msgs == 1:
+            tomorrow_epoch = get_unix_epoch() + CONST["T_RESTRICT_NO_TEXT_MSG"]
+            tlg_restrict_user(bot, chat_id, user_id, send_msg=True, send_media=False,
+                send_stickers_gifs=False, insert_links=False, send_polls=False,
+                invite_members=False, pin_messages=False, change_group_info=False,
+                until_date=tomorrow_epoch)
+        # Restrict forever
+        elif restrict_non_text_msgs == 2:
+            tlg_restrict_user(bot, chat_id, user_id, send_msg=True, send_media=False,
+                send_stickers_gifs=False, insert_links=False, send_polls=False,
+                invite_members=False, pin_messages=False, change_group_info=False)
+    else:
+        # Notify captcha fail
+        printts("[{}] User {} fail a multibutton challenge.".format(chat_id, user_name))
+        bot_msg = TEXT[lang]["CAPTCHA_MULTIBUTTON_FAIL"].format(user_name)
+        sent_msg_id = None
+        if rm_result_msg:
+            sent_result = tlg_send_msg(bot, chat_id, bot_msg)
+            if sent_result["msg"] is not None:
+                sent_msg_id = sent_result["msg"].message_id
+        else:
+            tlg_send_msg(bot, chat_id, bot_msg)
+        # Wait 10s
+        sleep(10)
+        # Try to kick the user
+        captcha_fail_kick_ban_member(bot, chat_id, user_id, CONST["MAX_FAIL_BAN_POLL"])
+    printts("[{}] Multibutton challenge pass request process completed.".format(chat_id))
     printts(" ")
 
 ###############################################################################
@@ -2004,7 +2102,7 @@ def cmd_captcha_mode(update: Update, context: CallbackContext):
     # Get and configure chat to provided captcha mode
     new_captcha_mode = args[0].lower()
     if new_captcha_mode in {
-    "poll", "button", "nums", "hex", "ascii", "math", "random" }:
+    "poll", "button", "multibutton", "nums", "hex", "ascii", "math", "random" }:
         save_config_property(group_id, "Captcha_Chars_Mode", new_captcha_mode)
         bot_msg = TEXT[lang]["CAPTCHA_MODE_CHANGE"].format(new_captcha_mode)
     else:

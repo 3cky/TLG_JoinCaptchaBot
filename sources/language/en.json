@@ -113,6 +113,9 @@
     "NEW_USER_BUTTON_MODE":
         "Hello {}, welcome to {}. Please press the button below to verify that you are not a robot. If you don't do this in {}, you will be automatically kicked out of the group.",
 
+    "NEW_USER_MULTIBUTTON_MODE":
+        "Hello {}, welcome to {}. To verify that you are not a robot, please press in {} the button \"{}\" below.",
+
     "CAPTCHA_SOLVED":
         "Captcha solved, user verified.\nWelcome to the group, {}",
 
@@ -223,6 +226,9 @@
 
     "POLL_NEW_USER":
         "Hello {}, welcome to {}. Please solve the poll below to prove that you are not a robot. If you don't do this in {}, you will be automatically kicked out of the group.",
+
+    "CAPTCHA_MULTIBUTTON_FAIL":
+        "Captcha fail, {} pressed a wrong button and will be kicked.",
 
     "CAPTCHA_POLL_FAIL":
         "Captcha poll fail, {} select a wrong answer. You will be kicked in 10s, please try to join the group again...",
