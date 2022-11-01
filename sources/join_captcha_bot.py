@@ -874,7 +874,13 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         printts("[{}] Captcha is not enabled in this chat".format(chat_id))
         return
     # Determine configured language and captcha settings
-    lang = get_chat_config(chat_id, "Language")
+    # Try to use user language first
+    lang = getattr(join_user, "language_code", None)
+    if lang:
+        lang = lang[0:2].upper()
+    # Fallback to configured chat language if user language is not yet supported
+    if lang not in TEXT:
+        lang = get_chat_config(chat_id, "Language")
     captcha_level = get_chat_config(chat_id, "Captcha_Difficulty_Level")
     captcha_mode = get_chat_config(chat_id, "Captcha_Chars_Mode")
     captcha_timeout = get_chat_config(chat_id, "Captcha_Time")
