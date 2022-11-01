@@ -909,7 +909,7 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         if sent_result["msg"] is None:
             send_problem = True
     if captcha_mode == "multibutton":
-        buttons = ["ПОВТ", "КТ", "СБР", "АР2", "СУ", "РУС", "ЛАТ"]
+        buttons = ["КТ", "СБР", "АР2", "СУ", "РУС", "ЛАТ"]
         button_press = choice(buttons)
         # Send a multibutton challenge
         challenge_text = TEXT[lang]["NEW_USER_MULTIBUTTON_MODE"].format(join_user_name,
